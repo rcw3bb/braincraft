@@ -18,21 +18,18 @@ Retries on any exception up to `max_attempts` times, sleeping a random jittered
 duration between attempts. Re-raises the last exception when all attempts are exhausted.
 
 ```python
-import asyncio
 from braincraft import retry_rand_exp
 
 async def fetch_data(url: str) -> str:
     # your async operation here
     ...
 
-result = asyncio.run(
-    retry_rand_exp(
-        fetch_data,
-        "https://example.com/api",
-        max_attempts=5,
-        base_delay=1.0,
-        max_delay=30.0,
-    )
+result = await retry_rand_exp(
+    fetch_data,
+    "https://example.com/api",
+    max_attempts=5,
+    base_delay=1.0,
+    max_delay=30.0,
 )
 ```
 
