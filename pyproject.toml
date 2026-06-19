@@ -1,0 +1,31 @@
+[project]
+name = "braincraft"
+version = "1.0.0"
+description = "A workshop of small, sharp utilities - carefully shaped helpers you reuse across projects to keep everyday coding tasks fast, tidy, and consistent."
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Ron Webb"}
+]
+requires-python = ">=3.14"
+dependencies = [
+    "logenrich (>=1.0.1,<2.0.0)",
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+packages = [{include = "braincraft"}]
+include = ["CHANGELOG.md"]
+
+[dependency-groups]
+dev = [
+    "black (>=26.5.1,<27.0.0)",
+    "pylint (>=4.0.6,<5.0.0)",
+    "pytest (>=9.1.1,<10.0.0)",
+    "pytest-cov (>=7.1.0,<8.0.0)",
+    "pytest-asyncio (>=1.0.0,<2.0.0)"
+]
