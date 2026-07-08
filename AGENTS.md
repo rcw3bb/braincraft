@@ -11,7 +11,11 @@ braincraft is a Python utility library — a workshop of small, sharp helpers re
 - logging.ini — logging config (log file: braincraft.log); developer config at project root, not bundled
 - braincraft/ — main package source code
 - braincraft/__init__.py — package entry point: version, env bootstrap, logger setup
+- braincraft/ignorefile.py — gitignore-style ignore file parser with extensible pattern handlers
+- braincraft/retry.py — async retry with full-jitter exponential back-off
 - tests/ — pytest test suite, mirrors braincraft/ structure
+- tests/test_ignorefile.py — tests for ignorefile module
+- tests/test_retry.py — tests for retry module
 - pyproject.toml — PEP 621 project config + Poetry settings + dev dependency groups
 - .pylintrc — Pylint config (must maintain 10/10 score)
 - .gitignore — excludes .venv, *.log, .env, caches; poetry.lock is tracked
@@ -42,3 +46,11 @@ braincraft is a Python utility library — a workshop of small, sharp helpers re
 - Write to the matching context file's "Session learnings" section; if none fits, add to Rules above. One dated line, plain language.
   e.g. "Always wrap EnvDirBootstrap calls in a try/except for missing config (learned 2026-06-19)"
 - 3+ related notes on the same topic → create a new `docs/` context file, move notes there, update the Tree. Keep this file under 100 lines.
+
+## Session learnings
+
+- Storing gitignore patterns with their leading `/` intact (stripping only in the regex builder) preserves anchoring info through the handler interface without a public API change (learned 2026-07-06).
+- `**/foo` must be detected as unanchored before the generic `"/" in pattern` check; use a `pattern.startswith("**/")` guard in `_compute_anchored` (learned 2026-07-06).
+- Escape detection (`\!` / `\#` stripping) must set a flag to suppress the subsequent negation check, otherwise `\!foo` is incorrectly treated as a negation (learned 2026-07-06).
+- Trailing `/**` regex should emit `.*` not `/.*`; middle `/**/` should emit `(?:.+/)?` not `(?:/.*)?` (learned 2026-07-06).
+- Windows does not allow trailing spaces in file names; skip such filesystem-dependent tests with `@pytest.mark.skipif(sys.platform == "win32", ...)` (learned 2026-07-06).

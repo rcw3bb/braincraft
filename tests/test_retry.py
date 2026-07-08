@@ -100,7 +100,9 @@ class TestRetryAsync:
         """max_attempts < 1 raises ValueError before any call."""
         mock_func = AsyncMock()
         with pytest.raises(ValueError, match="max_attempts must be >= 1"):
-            await retry_rand_exp(mock_func, max_attempts=0, base_delay=1.0, max_delay=10.0)
+            await retry_rand_exp(
+                mock_func, max_attempts=0, base_delay=1.0, max_delay=10.0
+            )
         mock_func.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -123,5 +125,7 @@ class TestRetryAsync:
             patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
             patch("braincraft.retry._compute_delay", return_value=0.5),
         ):
-            await retry_rand_exp(mock_func, max_attempts=2, base_delay=1.0, max_delay=10.0)
+            await retry_rand_exp(
+                mock_func, max_attempts=2, base_delay=1.0, max_delay=10.0
+            )
         mock_sleep.assert_awaited_once_with(0.5)

@@ -6,8 +6,9 @@ you reuse across projects to keep everyday coding tasks fast, tidy, and consiste
 :since: 1.0.0
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
+from braincraft.ignorefile import IgnoreFile, PatternHandler
 from braincraft.retry import retry_rand_exp
 
-__all__ = ["retry_rand_exp"]
+__all__ = ["IgnoreFile", "PatternHandler", "retry_rand_exp"]
