@@ -27,7 +27,7 @@ braincraft is a Python utility library — a workshop of small, sharp helpers re
 ## Rules
 
 - Before adding a new module, place it in `braincraft/` and create a mirroring test file in `tests/` named `test_<module>.py`.
-- Before bumping the version, update `__version__` in `braincraft/__init__.py` and add a CHANGELOG.md entry.
+- Before bumping the version, update `__version__` in `braincraft/__init__.py`, update the `version` field in `pyproject.toml`, and add a CHANGELOG.md entry.
 - Never modify `pyproject.toml` dependency constraints without running `poetry update` afterwards.
 - Always run `poetry run pylint braincraft` after any code change — the linter must score 10/10.
 - Always add docstrings to every module, class, and method. Include `:author: Ron Webb` and `:since: <version>` in every module docstring.
