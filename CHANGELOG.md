@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0 - 2026-07-09
+
+### Changed
+
+- `IgnoreFile.__init__` now accepts an optional `base_dir` parameter (`str | Path | None`,
+  default `None`). When supplied, it overrides the working directory used for
+  anchored-pattern matching; when `None` the behaviour is unchanged (current working
+  directory at construction time).
+
 ## 1.1.0 - 2026-07-06
 
 ### Added

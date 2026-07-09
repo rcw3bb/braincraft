@@ -1,7 +1,7 @@
 # braincraft
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](CHANGELOG.md)
 
 > A workshop of small, sharp utilities — carefully shaped helpers you reuse across projects to keep everyday coding tasks fast, tidy, and consistent.
 
@@ -49,11 +49,12 @@ ignored. Pattern matching follows the full [gitignore specification](https://git
 `**` double-star rules, and anchoring.
 
 Anchored patterns (containing `/` at the start or middle, e.g. `doc/build` or
-`/dist`) are matched relative to the **current working directory** at the time
-`IgnoreFile` is created, not relative to the location of the ignore file itself.
-The ignore file can therefore live anywhere.
+`/dist`) are matched relative to a **base directory** — by default the current
+working directory at the time `IgnoreFile` is created. An explicit `base_dir`
+(`str | Path`) can be supplied to override this. The ignore file can live anywhere,
+independently of `base_dir`.
 
-Matching always occurs — no error is raised for paths outside CWD.
+Matching always occurs — no error is raised for paths outside the base directory.
 
 ```python
 from pathlib import Path
@@ -64,6 +65,28 @@ ig = IgnoreFile(Path(".gitignore"))
 print(ig.is_ignored(Path("dist/output.js")))       # True
 print(ig.is_ignored(Path("src/main.py")))          # False
 print(ig.is_ignored(Path("build/")))               # True (if build/ is a directory)
+```
+
+#### Custom base directory
+
+By default `IgnoreFile` uses the current working directory as the root for anchored
+patterns. Pass `base_dir` (`str` or `Path`) to pin matching to a specific directory
+regardless of where the process is running or where the ignore file lives.
+
+```python
+from pathlib import Path
+from braincraft import IgnoreFile
+
+project = Path("/srv/myproject")
+ig = IgnoreFile(project / ".gitignore", base_dir=project)
+
+# Anchored pattern /dist matches relative to project, not the process CWD
+print(ig.is_ignored(project / "dist" / "bundle.js"))   # True
+print(ig.is_ignored(project / "src" / "main.py"))      # False
+
+# Works equally well with plain strings
+ig2 = IgnoreFile("/srv/myproject/.gitignore", base_dir="/srv/myproject")
+print(ig2.is_ignored("/srv/myproject/dist/bundle.js"))  # True
 ```
 
 #### Custom pattern handlers

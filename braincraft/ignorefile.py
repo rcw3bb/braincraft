@@ -370,8 +370,9 @@ class IgnoreFile:
     """Reads an ignore file and determines whether paths should be ignored.
 
     Anchored patterns (those containing ``/`` at the start or middle) are
-    matched relative to the **current working directory** at the time this
-    object is created.  Unanchored patterns match at any directory depth.
+    matched relative to *base_dir* (defaults to the **current working
+    directory** at construction time).  Unanchored patterns match at any
+    directory depth.
     Custom pattern handling can be layered on top via :meth:`register_handler`.
 
     Example::
@@ -386,19 +387,23 @@ class IgnoreFile:
     :since: 1.1.0
     """
 
-    def __init__(self, ignore_file: str | Path) -> None:
+    def __init__(
+        self, ignore_file: str | Path, base_dir: str | Path | None = None
+    ) -> None:
         """Initialise from an ignore file on disk.
-
-        The current working directory at the time of this call is captured as
-        the base for anchored-pattern matching.  It does not have to be the
-        directory containing the ignore file.
 
         :param ignore_file: Path to the ignore file; a plain :class:`str` is
             accepted and converted to :class:`~pathlib.Path` internally.
+        :param base_dir: Base directory used for anchored-pattern matching.
+            A plain :class:`str` is accepted and converted to
+            :class:`~pathlib.Path` internally.  When ``None`` (the default)
+            the current working directory at the time of this call is used.
         :raises FileNotFoundError: If *ignore_file* does not exist.
         """
         self._ignore_file = Path(ignore_file).resolve()
-        self._base_dir = Path.cwd().resolve()
+        self._base_dir = (
+            Path(base_dir).resolve() if base_dir is not None else Path.cwd().resolve()
+        )
         _logger.debug("IgnoreFile base_dir=%s", self._base_dir)
 
         lines = self._ignore_file.read_text(encoding="utf-8").splitlines(keepends=True)
