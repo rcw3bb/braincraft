@@ -448,3 +448,68 @@ class TestIgnoreFileStrInput:
         target = _make_file(tmp_path, "app.log")
         ig = IgnoreFile(str(ignore_path))
         assert ig.is_ignored(str(target)) is True
+
+
+# ---------------------------------------------------------------------------
+# TestIgnoreFileBaseDir
+# ---------------------------------------------------------------------------
+
+
+class TestIgnoreFileBaseDir:
+    """Tests for the optional base_dir constructor parameter."""
+
+    def test_default_none_uses_cwd(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When base_dir is None (default) the CWD is used for anchored matching."""
+        monkeypatch.chdir(tmp_path)
+        ig = IgnoreFile(_write_ignore(tmp_path, "/build\n"))
+        assert ig.is_ignored(_make_file(tmp_path, "build")) is True
+
+    def test_base_dir_as_path_overrides_cwd(
+        self, tmp_path: Path, tmp_path_factory: pytest.TempPathFactory
+    ) -> None:
+        """A Path base_dir is used for anchored matching instead of CWD."""
+        other = tmp_path_factory.mktemp("other")
+        ig = IgnoreFile(_write_ignore(tmp_path, "/build\n"), base_dir=tmp_path)
+        # file inside the supplied base_dir should be matched
+        assert ig.is_ignored(_make_file(tmp_path, "build")) is True
+
+    def test_base_dir_as_str_overrides_cwd(
+        self, tmp_path: Path, tmp_path_factory: pytest.TempPathFactory
+    ) -> None:
+        """A str base_dir is accepted and behaves the same as a Path."""
+        ig = IgnoreFile(_write_ignore(tmp_path, "/build\n"), base_dir=str(tmp_path))
+        assert ig.is_ignored(_make_file(tmp_path, "build")) is True
+
+    def test_anchored_pattern_matches_relative_to_base_dir(
+        self, tmp_path: Path, tmp_path_factory: pytest.TempPathFactory
+    ) -> None:
+        """Anchored patterns are evaluated relative to base_dir, not CWD."""
+        base = tmp_path_factory.mktemp("base")
+        cwd_dir = tmp_path  # different from base
+        # change into cwd_dir so CWD != base
+        ig = IgnoreFile(_write_ignore(cwd_dir, "doc/frotz\n"), base_dir=base)
+        # doc/frotz relative to base should be ignored
+        assert ig.is_ignored(_make_file(base, "doc/frotz")) is True
+        # doc/frotz relative to cwd_dir should NOT be ignored (wrong base)
+        assert ig.is_ignored(_make_file(cwd_dir, "doc/frotz")) is False
+
+    def test_unanchored_pattern_unaffected_by_base_dir(
+        self, tmp_path: Path, tmp_path_factory: pytest.TempPathFactory
+    ) -> None:
+        """Unanchored patterns match regardless of which base_dir is provided."""
+        other = tmp_path_factory.mktemp("unanchored_base")
+        ig = IgnoreFile(_write_ignore(tmp_path, "*.log\n"), base_dir=other)
+        # unanchored *.log still matches a file anywhere
+        assert ig.is_ignored(_make_file(tmp_path, "app.log")) is True
+
+    def test_base_dir_does_not_affect_directory_only_pattern(
+        self, tmp_path: Path
+    ) -> None:
+        """Directory-only patterns still apply correctly when base_dir is explicit."""
+        ig = IgnoreFile(_write_ignore(tmp_path, "build/\n"), base_dir=tmp_path)
+        build_dir = _make_dir(tmp_path, "build")
+        build_file = _make_file(tmp_path, "other_build")
+        assert ig.is_ignored(build_dir) is True
+        assert ig.is_ignored(build_file) is False
