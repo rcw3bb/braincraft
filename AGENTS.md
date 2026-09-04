@@ -13,9 +13,11 @@ braincraft is a Python utility library — a workshop of small, sharp helpers re
 - braincraft/__init__.py — package entry point: version, env bootstrap, logger setup
 - braincraft/ignorefile.py — gitignore-style ignore file parser with extensible pattern handlers
 - braincraft/retry.py — async retry with full-jitter exponential back-off
+- braincraft/version_check.py — checks a PyPI-compatible index for a newer version of an app/package
 - tests/ — pytest test suite, mirrors braincraft/ structure
 - tests/test_ignorefile.py — tests for ignorefile module
 - tests/test_retry.py — tests for retry module
+- tests/test_version_check.py — tests for version_check module
 - pyproject.toml — PEP 621 project config + Poetry settings + dev dependency groups
 - .pylintrc — Pylint config (must maintain 10/10 score)
 - .gitignore — excludes .venv, *.log, .env, caches; poetry.lock is tracked
