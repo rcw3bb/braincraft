@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.3.0 - 2026-09-04
+
+### Added
+
+- `version_check` module: `check_new_version` function that checks a PyPI-compatible
+  index (default `https://pypi.org`) for a newer version of a given application/package.
+  Accepts a required `app_name`, an optional `current_version` (auto-detected via
+  `importlib.metadata` when omitted), an optional `index_url` override, an optional
+  `disable` flag, an optional `timeout` in seconds (default `5`), and an optional
+  `index_kind` (`IndexKind` enum: `PYPI` or `NEXUS3`) selecting between a PyPI
+  Warehouse-compatible JSON API and a Sonatype Nexus Repository 3 PEP 691 JSON Simple
+  API. Never raises; failures are logged and reported as no update available.
+
 ## 1.2.0 - 2026-07-09
 
 ### Changed

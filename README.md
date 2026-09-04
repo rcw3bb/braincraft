@@ -1,7 +1,7 @@
 # braincraft
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](CHANGELOG.md)
 
 > A workshop of small, sharp utilities — carefully shaped helpers you reuse across projects to keep everyday coding tasks fast, tidy, and consistent.
 
@@ -29,15 +29,19 @@ poetry add braincraft
 graph TD
     A[braincraft] --> B[ignorefile]
     A --> C[retry]
+    A --> D[version_check]
     B --> B1["IgnoreFile — gitignore-style path matching"]
     B --> B2["PatternHandler — extensible custom pattern handlers"]
     C --> C1["retry_rand_exp — async retry with full-jitter back-off"]
+    D --> D1["check_new_version — checks an index for a newer app/package version"]
+    D --> D2["IndexKind — PYPI or NEXUS3 index selector"]
 ```
 
 | Module | Exported symbols | Purpose |
 |---|---|---|
 | `ignorefile` | `IgnoreFile`, `PatternHandler` | Gitignore-style ignore-file parsing with extensible handlers |
 | `retry` | `retry_rand_exp` | Async retry with full-jitter exponential back-off |
+| `version_check` | `check_new_version`, `IndexKind` | Checks a PyPI or Nexus 3 index for a newer version of an app/package |
 
 ## Usage
 
@@ -136,6 +140,42 @@ result = await retry_rand_exp(
     max_attempts=5,
     base_delay=1.0,
     max_delay=30.0,
+)
+```
+
+### `check_new_version`
+
+Checks a package index for a newer version of a given application/package. The
+currently installed version is auto-detected via `importlib.metadata` when not
+supplied explicitly. Never raises — network errors, missing metadata, or malformed
+responses are logged and reported as "no update available" (`None`).
+
+```python
+from braincraft import check_new_version
+
+latest = check_new_version("braincraft")
+if latest is not None:
+    print(f"A newer version is available: {latest}")
+```
+
+Optional parameters:
+
+- `current_version` — override the auto-detected installed version.
+- `index_url` — base URL of the index to query (default `https://pypi.org`).
+- `disable` — skip the check entirely and return `None` immediately.
+- `timeout` — request timeout in seconds (default `5`).
+- `index_kind` — an `IndexKind` enum selecting the index API to query:
+  - `IndexKind.PYPI` (default) — a PyPI Warehouse-compatible JSON API.
+  - `IndexKind.NEXUS3` — a Sonatype Nexus Repository 3 PyPI-format repository,
+    queried via its PEP 691 JSON Simple API.
+
+```python
+from braincraft import IndexKind, check_new_version
+
+latest = check_new_version(
+    "my-internal-package",
+    index_url="https://nexus.example.com/repository/pypi-hosted",
+    index_kind=IndexKind.NEXUS3,
 )
 ```
 
