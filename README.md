@@ -1,7 +1,6 @@
 # braincraft
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](CHANGELOG.md)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/rcw3bb/braincraft/blob/main/LICENSE) [![Version](https://img.shields.io/badge/Version-1.3.1-green.svg)](https://github.com/rcw3bb/braincraft/blob/main/CHANGELOG.md) [![Python](https://img.shields.io/badge/Python-3.14%2B-blue)](https://www.python.org/) [![PyPI](https://img.shields.io/badge/PyPI-braincraft-orange)](https://pypi.org/project/braincraft/)
 
 > A workshop of small, sharp utilities — carefully shaped helpers you reuse across projects to keep everyday coding tasks fast, tidy, and consistent.
 
@@ -205,11 +204,11 @@ poetry run pytest --cov=braincraft tests --cov-report html
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for a full history of changes.
+See [CHANGELOG.md](https://github.com/rcw3bb/braincraft/blob/main/CHANGELOG.md) for a full history of changes.
 
 ## License
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License — see the [LICENSE](https://github.com/rcw3bb/braincraft/blob/main/LICENSE) file for details.
 
 ## Author
 

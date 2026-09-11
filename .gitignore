@@ -63,3 +63,5 @@ dmypy.json
 
 # Distribution / build
 *.spec
+
+*.ipynb

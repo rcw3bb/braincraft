@@ -7,7 +7,7 @@ the gitignore pattern specification (https://git-scm.com/docs/gitignore).
 Pattern rules supported:
 - Blank lines and ``#`` comment lines are skipped.
 - A leading ``!`` negates a pattern (re-includes a previously excluded path).
-- A trailing ``/`` restricts matching to directories only.
+- A trailing ``/`` or ``\\`` restricts matching to directories only.
 - A pattern without a ``/`` (other than trailing) matches at any directory level.
 - A pattern with a ``/`` at the start or middle is anchored to the current working
   directory.
@@ -27,11 +27,40 @@ an :class:`IgnoreFile` instance to handle patterns beyond the built-in gitignore
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 from logenrich import setup_logger
 
 _logger = setup_logger(__name__)
+
+
+def _normalize_separators(text: str) -> str:
+    """Normalise back-slashes to forward-slashes in *text*.
+
+    Centralises the ``\\`` -> ``/`` substitution used to treat back-slash and
+    forward-slash as equivalent directory separators throughout this module.
+
+    :param text: String that may contain back-slash separators.
+    :return: *text* with every ``\\`` replaced by ``/``.
+    """
+    return text.replace("\\", "/")
+
+
+def _to_path(value: str | Path) -> Path:
+    """Convert *value* to a :class:`~pathlib.Path`, treating ``\\`` as ``/``.
+
+    A plain :class:`str` has its back-slashes normalised to forward-slashes
+    before being parsed, so back-slash-separated paths are recognised as
+    multi-level paths even on platforms whose native separator is ``/``.  A
+    :class:`Path` is returned unchanged.
+
+    :param value: Path-like value to convert.
+    :return: Normalised :class:`~pathlib.Path`.
+    """
+    if isinstance(value, str):
+        value = _normalize_separators(value)
+    return Path(value)
 
 
 class PatternHandler(ABC):
@@ -96,20 +125,27 @@ def _escape_for_regex(text: str) -> str:
     return "".join(result)
 
 
+@lru_cache(maxsize=None)
 def _compute_anchored(pattern: str) -> bool:
     """Determine whether a gitignore pattern is anchored to the base directory.
 
-    A pattern is anchored when it contains a ``/`` at the start or in the
-    middle.  The special leading ``**/`` prefix is *not* considered an anchor
-    because it means "match in all directories" and therefore floats freely.
+    A pattern is anchored when it contains a ``/`` or ``\\`` at the start or in
+    the middle.  The special leading ``**/`` prefix is *not* considered an
+    anchor because it means "match in all directories" and therefore floats
+    freely.
 
-    :param pattern: Cleaned gitignore pattern (leading ``/`` may still be
-        present).
+    Results are memoised: this is a pure function of *pattern* and is invoked
+    once per pattern per path checked, so caching avoids re-deriving the same
+    answer repeatedly.
+
+    :param pattern: Cleaned gitignore pattern (leading ``/`` or ``\\`` may
+        still be present).
     :return: ``True`` if the pattern is anchored.
     """
-    if pattern.startswith("**/"):
+    normalized = _normalize_separators(pattern)
+    if normalized.startswith("**/"):
         return False
-    return "/" in pattern
+    return "/" in normalized
 
 
 def _segment_to_regex(segment: str) -> str | None:
@@ -190,8 +226,14 @@ def _build_regex_body(pat: str) -> str | None:
     return "".join(regex_parts)
 
 
+@lru_cache(maxsize=None)
 def _pattern_to_regex(pattern: str, anchored: bool) -> re.Pattern[str]:
     """Convert a cleaned gitignore *pattern* into a compiled regular expression.
+
+    Results are memoised on ``(pattern, anchored)``: :class:`IgnoreFile`
+    re-evaluates every pattern against every ancestor directory of a path, so
+    without caching the same regex would be rebuilt from scratch on every
+    single comparison.
 
     :param pattern: Cleaned pattern (no leading ``!``, ``/`` or trailing ``/``).
     :param anchored: When ``True`` the pattern is matched relative to the base
@@ -199,7 +241,7 @@ def _pattern_to_regex(pattern: str, anchored: bool) -> re.Pattern[str]:
     :return: Compiled :class:`re.Pattern` object.
     """
     # Normalise forward-slashes (patterns always use /)
-    pat = pattern.replace("\\", "/")
+    pat = _normalize_separators(pattern)
 
     # Strip leading / — anchoring is already encoded in the anchored parameter
     if pat.startswith("/"):
@@ -232,7 +274,10 @@ class _GitIgnorePatternHandler(PatternHandler):
 
         Computes the path string to match against by attempting
         ``path.relative_to(base_dir)``; when the path lies outside *base_dir*
-        the full resolved posix path string is used instead.
+        the full resolved posix path string is used instead.  If *path* is
+        itself an ancestor of *base_dir*, an anchored pattern cannot align
+        with *base_dir* at all, so matching falls back to unanchored
+        (suffix) semantics instead of requiring an exact full-path match.
 
         :param pattern: Cleaned gitignore pattern.
         :param path: Resolved absolute path to test.
@@ -240,12 +285,14 @@ class _GitIgnorePatternHandler(PatternHandler):
             :class:`IgnoreFile` was created.
         :return: ``True`` if the path matches the pattern, ``False`` otherwise.
         """
+        anchored = _compute_anchored(pattern)
         try:
             match_str = path.relative_to(base_dir).as_posix()
         except ValueError:
             match_str = path.as_posix()
+            if anchored and base_dir.is_relative_to(path):
+                anchored = False
 
-        anchored = _compute_anchored(pattern)
         compiled = _pattern_to_regex(pattern, anchored)
         result = compiled.search(match_str) is not None
         _logger.debug(
@@ -280,13 +327,13 @@ def _resolve_negation(line: str) -> tuple[str, bool]:
 
 
 def _strip_dir_marker(line: str) -> tuple[str, bool]:
-    """Strip a trailing ``/`` directory marker from *line*.
+    """Strip a trailing ``/`` or ``\\`` directory marker from *line*.
 
     :param line: Pattern line after negation has been resolved.
     :return: Tuple of ``(cleaned_line, directory_only)``.
     """
-    if line.endswith("/"):
-        return line.rstrip("/"), True
+    if line.endswith("/") or line.endswith("\\"):
+        return line.rstrip("/\\"), True
     return line, False
 
 
@@ -330,6 +377,7 @@ def _parse_ignore_lines(lines: list[str]) -> list[_ParsedLine]:
     for raw_line in lines:
         result = _parse_single_line(raw_line.rstrip("\n\r"))
         if result is not None:
+            _logger.debug("Parsed single line: %s", result)
             parsed.append(result)
     return parsed
 
@@ -371,8 +419,9 @@ class IgnoreFile:
 
     Anchored patterns (those containing ``/`` at the start or middle) are
     matched relative to *base_dir* (defaults to the **current working
-    directory** at construction time).  Unanchored patterns match at any
-    directory depth.
+    directory** at construction time; if *base_dir* is a file, its parent
+    directory is used instead).  Unanchored patterns match at any directory
+    depth.
     Custom pattern handling can be layered on top via :meth:`register_handler`.
 
     Example::
@@ -398,12 +447,18 @@ class IgnoreFile:
             A plain :class:`str` is accepted and converted to
             :class:`~pathlib.Path` internally.  When ``None`` (the default)
             the current working directory at the time of this call is used.
+            When *base_dir* resolves to a file rather than a directory, its
+            parent directory is used instead.
         :raises FileNotFoundError: If *ignore_file* does not exist.
         """
-        self._ignore_file = Path(ignore_file).resolve()
+        self._ignore_file = _to_path(ignore_file).resolve()
         self._base_dir = (
-            Path(base_dir).resolve() if base_dir is not None else Path.cwd().resolve()
+            _to_path(base_dir).resolve()
+            if base_dir is not None
+            else Path.cwd().resolve()
         )
+        if self._base_dir.is_file():
+            self._base_dir = self._base_dir.parent
         _logger.debug("IgnoreFile base_dir=%s", self._base_dir)
 
         lines = self._ignore_file.read_text(encoding="utf-8").splitlines(keepends=True)
@@ -437,19 +492,69 @@ class IgnoreFile:
         not exist or is not a directory, those patterns are skipped entirely —
         there is no fallback to file matching.
 
+        If any ancestor directory of *path* is itself ignored, *path* is
+        considered ignored too — mirroring gitignore's behaviour of never
+        descending into an excluded directory.
+
         :param path: Path to test (relative or absolute); a plain :class:`str`
             is accepted and converted to :class:`~pathlib.Path` internally.
         :return: ``True`` if the path should be ignored, ``False`` otherwise.
         """
-        resolved = Path(path).resolve()
-        is_dir = resolved.is_dir()
+        resolved = _to_path(path).resolve()
 
+        if self._is_ancestor_ignored(resolved):
+            return True
+
+        return self._match_patterns(resolved, resolved.is_dir())
+
+    def _is_ancestor_ignored(self, path: Path) -> bool:
+        """Return ``True`` if any ancestor directory of *path* is ignored.
+
+        Walks ancestors from nearest to farthest; the nearest ancestor with a
+        definitive directory-only match (ignored or explicitly negated) wins,
+        so a ``!`` pattern re-including a specific directory also applies to
+        everything beneath it, even when a farther ancestor is excluded.
+
+        :param path: Resolved absolute path whose ancestors are checked.
+        :return: ``True`` if an ancestor directory matches an ignore pattern.
+        """
+        _logger.debug("Checking if any ancestor of %s is ignored", path)
+        for ancestor in path.parents:
+            result = self._match_directory_patterns(ancestor)
+            if result is not None:
+                _logger.debug("Ancestor %s -> ignored=%s", ancestor, result)
+                return result
+        return False
+
+    def _match_directory_patterns(self, path: Path) -> bool | None:
+        """Evaluate only directory-only pattern lines against *path*.
+
+        :param path: Resolved absolute path to test (an ancestor directory).
+        :return: Ignored state of the last matching directory-only line, or
+            ``None`` if no directory-only pattern matches *path* at all.
+        """
+        result: bool | None = None
+        for line in self._parsed_lines:
+            if not line.directory_only:
+                continue
+            if self._check_match(line, path):
+                result = not line.negated
+        return result
+
+    def _match_patterns(self, path: Path, is_dir: bool) -> bool:
+        """Evaluate all parsed pattern lines against *path*.
+
+        :param path: Resolved absolute path to test.
+        :param is_dir: Whether *path* should be treated as a directory for the
+            purpose of directory-only pattern matching.
+        :return: ``True`` if *path* should be ignored.
+        """
         ignored = False
         for line in self._parsed_lines:
             if line.directory_only and not is_dir:
                 continue
 
-            matched = self._check_match(line, resolved)
+            matched = self._check_match(line, path)
 
             if matched:
                 ignored = not line.negated
@@ -457,7 +562,7 @@ class IgnoreFile:
                     "Pattern %r %s %s -> ignored=%s",
                     line.raw,
                     "negated" if line.negated else "matched",
-                    resolved,
+                    path,
                     ignored,
                 )
 

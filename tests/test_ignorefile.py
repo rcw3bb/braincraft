@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from braincraft.ignorefile import IgnoreFile, PatternHandler
+from braincraft.ignorefile import IgnoreFile, PatternHandler, _to_path
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -37,6 +37,12 @@ def _make_dir(tmp_path: Path, rel: str) -> Path:
     target = tmp_path / rel
     target.mkdir(parents=True, exist_ok=True)
     return target
+
+
+@pytest.fixture
+def gosu_xyz_ignore_file(tmp_path: Path) -> Path:
+    """Ignore file with a single anchored directory pattern: ``gosu/xyz/``."""
+    return _write_ignore(tmp_path, "gosu/xyz/\n")
 
 
 # ---------------------------------------------------------------------------
@@ -209,7 +215,7 @@ class TestIgnoreFileAnchoring:
 
 
 class TestIgnoreFileDirectoryOnly:
-    """Tests for directory-only patterns (trailing /)."""
+    """Tests for directory-only patterns (trailing / or \\)."""
 
     def test_trailing_slash_matches_directory(self, tmp_path: Path) -> None:
         """foo/ matches a directory named foo."""
@@ -229,6 +235,207 @@ class TestIgnoreFileDirectoryOnly:
         ghost = tmp_path / "build"
         # ghost does not exist, so is_dir() == False
         assert ig.is_ignored(ghost) is False
+
+    def test_trailing_backslash_matches_directory(self, tmp_path: Path) -> None:
+        """foo\\ matches a directory named foo, same as foo/."""
+        ig = IgnoreFile(_write_ignore(tmp_path, "build\\\n"))
+        build_dir = _make_dir(tmp_path, "build")
+        assert ig.is_ignored(build_dir) is True
+
+    def test_trailing_backslash_does_not_match_file(self, tmp_path: Path) -> None:
+        """foo\\ does NOT match a regular file named foo — no fallback."""
+        ig = IgnoreFile(_write_ignore(tmp_path, "build\\\n"))
+        build_file = _make_file(tmp_path, "build")
+        assert ig.is_ignored(build_file) is False
+
+    def test_ignored_directory_cascades_to_all_contents(self, tmp_path: Path) -> None:
+        """When base_dir contains an ignored directory, all its files/dirs are ignored too."""
+        ig = IgnoreFile(_write_ignore(tmp_path, "build/\n"), base_dir=tmp_path)
+        nested_file = _make_file(tmp_path, "build/output.txt")
+        nested_dir = _make_dir(tmp_path, "build/sub")
+        assert ig.is_ignored(nested_file) is True
+        assert ig.is_ignored(nested_dir) is True
+
+    def test_is_ignored_file_path_under_ignored_directory(self, tmp_path: Path) -> None:
+        """is_ignored ignores a file path whose path contains an ignored directory."""
+        ig = IgnoreFile(_write_ignore(tmp_path, "build/\n"))
+        deep_file = _make_file(tmp_path, "build/sub/deep/file.txt")
+        assert ig.is_ignored(deep_file) is True
+
+
+# ---------------------------------------------------------------------------
+# TestIgnoreFileMultiLevelSeparatorEquivalence
+# ---------------------------------------------------------------------------
+
+
+class TestIgnoreFileMultiLevelSeparatorEquivalence:
+    """Tests that \\ and / are interchangeable as multi-level directory separators."""
+
+    def test_to_path_normalizes_backslash_string(self) -> None:
+        """_to_path treats \\ as a path separator in a plain str, regardless of OS."""
+        assert _to_path("dir1\\dir2\\file.txt").parts[-3:] == (
+            "dir1",
+            "dir2",
+            "file.txt",
+        )
+
+    def test_to_path_leaves_path_object_unchanged(self, tmp_path: Path) -> None:
+        """_to_path returns a Path object as-is without touching its separators."""
+        assert _to_path(tmp_path) == tmp_path
+
+    def test_base_dir_backslash_string_with_forward_slash_pattern(
+        self, tmp_path: Path
+    ) -> None:
+        """A base_dir string using \\ still anchors a pattern written with /."""
+        base_dir_str = str(tmp_path).replace("/", "\\")
+        ig = IgnoreFile(_write_ignore(tmp_path, "dir1/dir2/\n"), base_dir=base_dir_str)
+        nested_file = _make_file(tmp_path, "dir1/dir2/file.txt")
+        assert ig.is_ignored(nested_file) is True
+
+    def test_base_dir_forward_slash_string_with_backslash_pattern(
+        self, tmp_path: Path
+    ) -> None:
+        """A base_dir string using / still anchors a pattern written with \\."""
+        base_dir_str = str(tmp_path).replace("\\", "/")
+        ig = IgnoreFile(
+            _write_ignore(tmp_path, "dir1\\dir2\\\n"), base_dir=base_dir_str
+        )
+        nested_file = _make_file(tmp_path, "dir1/dir2/file.txt")
+        assert ig.is_ignored(nested_file) is True
+
+    def test_forward_slash_pattern_matches_nested_directory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """dir1/dir2/ matches the nested directory dir1/dir2."""
+        monkeypatch.chdir(tmp_path)
+        ig = IgnoreFile(_write_ignore(tmp_path, "dir1/dir2/\n"))
+        nested_dir = _make_dir(tmp_path, "dir1/dir2")
+        assert ig.is_ignored(nested_dir) is True
+
+    def test_backslash_pattern_matches_nested_directory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """dir1\\dir2\\ matches the nested directory dir1/dir2, same as dir1/dir2/."""
+        monkeypatch.chdir(tmp_path)
+        ig = IgnoreFile(_write_ignore(tmp_path, "dir1\\dir2\\\n"))
+        nested_dir = _make_dir(tmp_path, "dir1/dir2")
+        assert ig.is_ignored(nested_dir) is True
+
+    def test_backslash_and_forward_slash_patterns_are_equivalent(
+        self, tmp_path: Path, tmp_path_factory: pytest.TempPathFactory
+    ) -> None:
+        """dir1/dir2/ and dir1\\dir2\\ produce identical is_ignored results."""
+        slash_base = tmp_path_factory.mktemp("slash_base")
+        backslash_base = tmp_path_factory.mktemp("backslash_base")
+
+        ig_slash = IgnoreFile(
+            _write_ignore(slash_base, "dir1/dir2/\n"), base_dir=slash_base
+        )
+        ig_backslash = IgnoreFile(
+            _write_ignore(backslash_base, "dir1\\dir2\\\n"), base_dir=backslash_base
+        )
+
+        slash_nested = _make_dir(slash_base, "dir1/dir2")
+        backslash_nested = _make_dir(backslash_base, "dir1/dir2")
+
+        assert ig_slash.is_ignored(slash_nested) == ig_backslash.is_ignored(
+            backslash_nested
+        )
+        assert ig_backslash.is_ignored(backslash_nested) is True
+
+    def test_backslash_multi_level_pattern_stays_anchored(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """dir1\\dir2\\ is anchored to base_dir and does not float like an unanchored pattern."""
+        monkeypatch.chdir(tmp_path)
+        ig = IgnoreFile(_write_ignore(tmp_path, "dir1\\dir2\\\n"))
+        floating_nested = _make_dir(tmp_path, "a/dir1/dir2")
+        assert ig.is_ignored(floating_nested) is False
+
+    def test_backslash_multi_level_pattern_does_not_match_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """dir1\\dir2\\ does NOT match a regular file named dir1/dir2 — no fallback."""
+        monkeypatch.chdir(tmp_path)
+        ig = IgnoreFile(_write_ignore(tmp_path, "dir1\\dir2\\\n"))
+        nested_file = _make_file(tmp_path, "dir1/dir2")
+        assert ig.is_ignored(nested_file) is False
+
+
+# ---------------------------------------------------------------------------
+# TestIsAncestorIgnoredSeparators
+# ---------------------------------------------------------------------------
+
+
+class TestIsAncestorIgnoredSeparators:
+    """Unit tests for _is_ancestor_ignored regarding \\ and / usage."""
+
+    def test_true_when_ancestor_matches_forward_slash_pattern(
+        self, tmp_path: Path
+    ) -> None:
+        """An ancestor directory matching a / pattern is detected as ignored."""
+        ig = IgnoreFile(_write_ignore(tmp_path, "dir1/dir2/\n"), base_dir=tmp_path)
+        nested_file = _make_file(tmp_path, "dir1/dir2/file.txt")
+        assert ig._is_ancestor_ignored(nested_file.resolve()) is True
+
+    def test_true_when_ancestor_matches_backslash_pattern(self, tmp_path: Path) -> None:
+        """An ancestor directory matching a \\ pattern is detected as ignored."""
+        ig = IgnoreFile(_write_ignore(tmp_path, "dir1\\dir2\\\n"), base_dir=tmp_path)
+        nested_file = _make_file(tmp_path, "dir1/dir2/file.txt")
+        assert ig._is_ancestor_ignored(nested_file.resolve()) is True
+
+    def test_false_when_no_ancestor_matches(self, tmp_path: Path) -> None:
+        """No ancestor matches an unrelated pattern, so the result is False."""
+        ig = IgnoreFile(_write_ignore(tmp_path, "other/\n"), base_dir=tmp_path)
+        nested_file = _make_file(tmp_path, "dir1/dir2/file.txt")
+        assert ig._is_ancestor_ignored(nested_file.resolve()) is False
+
+    def test_false_when_only_the_path_itself_matches(self, tmp_path: Path) -> None:
+        """A pattern matching the path itself (not an ancestor) does not count."""
+        ig = IgnoreFile(_write_ignore(tmp_path, "file.txt\n"), base_dir=tmp_path)
+        target_file = _make_file(tmp_path, "dir1/dir2/file.txt")
+        assert ig._is_ancestor_ignored(target_file.resolve()) is False
+
+    def test_true_with_backslash_base_dir_string_and_forward_slash_pattern(
+        self, tmp_path: Path
+    ) -> None:
+        """A \\-based base_dir string still detects an ancestor matched by a / pattern."""
+        base_dir_str = str(tmp_path).replace("/", "\\")
+        ig = IgnoreFile(_write_ignore(tmp_path, "dir1/dir2/\n"), base_dir=base_dir_str)
+        nested_file = _make_file(tmp_path, "dir1/dir2/file.txt")
+        assert ig._is_ancestor_ignored(nested_file.resolve()) is True
+
+    def test_true_with_forward_slash_base_dir_string_and_backslash_pattern(
+        self, tmp_path: Path
+    ) -> None:
+        """A /-based base_dir string still detects an ancestor matched by a \\ pattern."""
+        base_dir_str = str(tmp_path).replace("\\", "/")
+        ig = IgnoreFile(
+            _write_ignore(tmp_path, "dir1\\dir2\\\n"), base_dir=base_dir_str
+        )
+        nested_file = _make_file(tmp_path, "dir1/dir2/file.txt")
+        assert ig._is_ancestor_ignored(nested_file.resolve()) is True
+
+    def test_forward_and_backslash_patterns_give_identical_ancestor_result(
+        self, tmp_path: Path, tmp_path_factory: pytest.TempPathFactory
+    ) -> None:
+        """/ and \\ patterns produce the same _is_ancestor_ignored outcome."""
+        slash_base = tmp_path_factory.mktemp("ancestor_slash_base")
+        backslash_base = tmp_path_factory.mktemp("ancestor_backslash_base")
+
+        ig_slash = IgnoreFile(
+            _write_ignore(slash_base, "dir1/dir2/\n"), base_dir=slash_base
+        )
+        ig_backslash = IgnoreFile(
+            _write_ignore(backslash_base, "dir1\\dir2\\\n"), base_dir=backslash_base
+        )
+
+        slash_file = _make_file(slash_base, "dir1/dir2/file.txt")
+        backslash_file = _make_file(backslash_base, "dir1/dir2/file.txt")
+
+        assert ig_slash._is_ancestor_ignored(
+            slash_file.resolve()
+        ) == ig_backslash._is_ancestor_ignored(backslash_file.resolve())
 
 
 # ---------------------------------------------------------------------------
@@ -255,6 +462,62 @@ class TestIgnoreFileNegation:
         ig = IgnoreFile(_write_ignore(tmp_path, "\\!important.txt\n"))
         target = _make_file(tmp_path, "!important.txt")
         assert ig.is_ignored(target) is True
+
+
+# ---------------------------------------------------------------------------
+# TestAncestorNegation
+# ---------------------------------------------------------------------------
+
+
+class TestAncestorNegation:
+    """Tests that a directory-only negation cascades to its descendants."""
+
+    def test_negated_subdirectory_re_includes_its_direct_contents(
+        self, tmp_path: Path
+    ) -> None:
+        """!build/keep/ re-includes a file directly under the re-included dir."""
+        ig = IgnoreFile(
+            _write_ignore(tmp_path, "build/\n!build/keep/\n"), base_dir=tmp_path
+        )
+        assert ig.is_ignored(_make_file(tmp_path, "build/keep/file.txt")) is False
+
+    def test_negated_subdirectory_re_includes_nested_descendants(
+        self, tmp_path: Path
+    ) -> None:
+        """The re-inclusion also cascades to deeper descendants of that dir."""
+        ig = IgnoreFile(
+            _write_ignore(tmp_path, "build/\n!build/keep/\n"), base_dir=tmp_path
+        )
+        assert ig.is_ignored(_make_file(tmp_path, "build/keep/sub/file2.txt")) is False
+
+    def test_sibling_of_negated_subdirectory_stays_ignored(
+        self, tmp_path: Path
+    ) -> None:
+        """A sibling directory not covered by the negation remains ignored."""
+        ig = IgnoreFile(
+            _write_ignore(tmp_path, "build/\n!build/keep/\n"), base_dir=tmp_path
+        )
+        assert ig.is_ignored(_make_file(tmp_path, "build/file.txt")) is True
+
+    def test_is_ancestor_ignored_false_for_negated_directory(
+        self, tmp_path: Path
+    ) -> None:
+        """_is_ancestor_ignored stops at the nearest ancestor's own verdict."""
+        ig = IgnoreFile(
+            _write_ignore(tmp_path, "build/\n!build/keep/\n"), base_dir=tmp_path
+        )
+        nested = _make_file(tmp_path, "build/keep/file.txt")
+        assert ig._is_ancestor_ignored(nested.resolve()) is False
+
+    def test_is_ancestor_ignored_true_for_non_negated_ancestor(
+        self, tmp_path: Path
+    ) -> None:
+        """A farther ignored ancestor is still detected when nothing nearer matches."""
+        ig = IgnoreFile(
+            _write_ignore(tmp_path, "build/\n!build/keep/\n"), base_dir=tmp_path
+        )
+        nested = _make_file(tmp_path, "build/other/file.txt")
+        assert ig._is_ancestor_ignored(nested.resolve()) is True
 
 
 # ---------------------------------------------------------------------------
@@ -482,6 +745,13 @@ class TestIgnoreFileBaseDir:
         ig = IgnoreFile(_write_ignore(tmp_path, "/build\n"), base_dir=str(tmp_path))
         assert ig.is_ignored(_make_file(tmp_path, "build")) is True
 
+    def test_base_dir_as_file_uses_parent_directory(self, tmp_path: Path) -> None:
+        """When base_dir is a file, its parent directory is used instead."""
+        base_file = _make_file(tmp_path, "somefile.txt")
+        ig = IgnoreFile(_write_ignore(tmp_path, "/build\n"), base_dir=base_file)
+        # anchored pattern should match relative to tmp_path (base_file's parent)
+        assert ig.is_ignored(_make_file(tmp_path, "build")) is True
+
     def test_anchored_pattern_matches_relative_to_base_dir(
         self, tmp_path: Path, tmp_path_factory: pytest.TempPathFactory
     ) -> None:
@@ -513,3 +783,47 @@ class TestIgnoreFileBaseDir:
         build_file = _make_file(tmp_path, "other_build")
         assert ig.is_ignored(build_dir) is True
         assert ig.is_ignored(build_file) is False
+
+
+# ---------------------------------------------------------------------------
+# TestIgnoreFileBaseDirAboveAnchoredAncestor
+# ---------------------------------------------------------------------------
+
+
+class TestIgnoreFileBaseDirAboveAnchoredAncestor:
+    """Tests for anchored patterns whose matched ancestor sits above base_dir."""
+
+    def test_base_dir_as_nested_file_still_matches_anchored_ancestor(
+        self, tmp_path: Path, gosu_xyz_ignore_file: Path
+    ) -> None:
+        """base_dir set to a deeply nested file still ignores it via gosu/xyz/."""
+        target_file = _make_file(tmp_path, "gosu/xyz/ronella/gosu/ginfuser/IInfuser.gs")
+        ig = IgnoreFile(gosu_xyz_ignore_file, base_dir=target_file)
+        assert ig.is_ignored(target_file) is True
+
+    def test_is_ancestor_ignored_true_when_base_dir_nested_under_match(
+        self, tmp_path: Path, gosu_xyz_ignore_file: Path
+    ) -> None:
+        """_is_ancestor_ignored detects the anchored ancestor above base_dir."""
+        target_file = _make_file(tmp_path, "gosu/xyz/ronella/gosu/ginfuser/IInfuser.gs")
+        ig = IgnoreFile(gosu_xyz_ignore_file, base_dir=target_file)
+        assert ig._is_ancestor_ignored(target_file.resolve()) is True
+
+    def test_sibling_directory_outside_pattern_tree_not_ignored(
+        self, tmp_path: Path, gosu_xyz_ignore_file: Path
+    ) -> None:
+        """A file under a differently named ancestor is not affected."""
+        target_file = _make_file(
+            tmp_path, "gosu/other/ronella/gosu/ginfuser/IInfuser.gs"
+        )
+        ig = IgnoreFile(gosu_xyz_ignore_file, base_dir=target_file)
+        assert ig.is_ignored(target_file) is False
+
+    def test_disjoint_base_dir_still_requires_exact_anchor(
+        self, tmp_path: Path, tmp_path_factory: pytest.TempPathFactory
+    ) -> None:
+        """An anchored pattern still does not match a fully unrelated base_dir tree."""
+        other = tmp_path_factory.mktemp("disjoint_base")
+        ig = IgnoreFile(_write_ignore(tmp_path, "/build\n"), base_dir=other)
+        target = _make_file(tmp_path, "build")
+        assert ig.is_ignored(target) is False
