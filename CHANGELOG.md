@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.3.1 - 2026-09-09
+
+### Changed
+
+- `IgnoreFile`: `_compute_anchored` and `_pattern_to_regex` are now memoised with
+  `functools.lru_cache`, avoiding repeated recompilation of identical patterns
+  across the ancestor-directory walk performed by `is_ignored`.
+
+### Fixed
+
+- `IgnoreFile`: when `base_dir` resolves to a file instead of a directory, its parent
+  directory is now used for anchored-pattern matching.
+- `IgnoreFile.is_ignored` now cascades directory ignores to all files and
+  subdirectories inside an ignored directory, matching gitignore's behaviour of never
+  descending into an excluded directory.
+- `IgnoreFile`: a trailing `\` is now recognized as a directory-only marker in
+  addition to a trailing `/`.
+- `IgnoreFile`: `\` and `/` are now treated as equivalent multi-level directory
+  separators throughout pattern matching, `base_dir`, and path inputs, regardless of
+  which one is used or the host OS.
+- `IgnoreFile.is_ignored`: an anchored pattern whose matched ancestor lies above
+  `base_dir` (e.g. when `base_dir` is nested under the ignored directory) now falls
+  back to unanchored (suffix) matching instead of never matching.
+
 ## 1.3.0 - 2026-09-04
 
 ### Added
