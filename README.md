@@ -1,6 +1,6 @@
 # braincraft
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/rcw3bb/braincraft/blob/main/LICENSE) [![Version](https://img.shields.io/badge/Version-1.3.1-green.svg)](https://github.com/rcw3bb/braincraft/blob/main/CHANGELOG.md) [![Python](https://img.shields.io/badge/Python-3.14%2B-blue)](https://www.python.org/) [![PyPI](https://img.shields.io/badge/PyPI-braincraft-orange)](https://pypi.org/project/braincraft/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/rcw3bb/braincraft/blob/main/LICENSE) [![Version](https://img.shields.io/badge/Version-1.3.2-green.svg)](https://github.com/rcw3bb/braincraft/blob/main/CHANGELOG.md) [![Python](https://img.shields.io/badge/Python-3.14%2B-blue)](https://www.python.org/) [![PyPI](https://img.shields.io/badge/PyPI-braincraft-orange)](https://pypi.org/project/braincraft/)
 
 > A workshop of small, sharp utilities — carefully shaped helpers you reuse across projects to keep everyday coding tasks fast, tidy, and consistent.
 
@@ -166,7 +166,7 @@ Optional parameters:
 - `index_kind` — an `IndexKind` enum selecting the index API to query:
   - `IndexKind.PYPI` (default) — a PyPI Warehouse-compatible JSON API.
   - `IndexKind.NEXUS3` — a Sonatype Nexus Repository 3 PyPI-format repository,
-    queried via its PEP 691 JSON Simple API.
+    queried via its PEP 691 HTML Simple API.
 
 ```python
 from braincraft import IndexKind, check_new_version

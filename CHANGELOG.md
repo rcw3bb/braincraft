@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.2 - 2026-09-24
+
+### Changed
+
+- `version_check._fetch_nexus3_version` now queries the Nexus 3 PEP 691 HTML Simple
+  API (`Accept: text/html`) instead of the JSON Simple API, parsing package links
+  with a new internal `HTMLParser`-based helper.
+
 ## 1.3.1 - 2026-09-09
 
 ### Changed

@@ -101,48 +101,70 @@ class TestFetchPypiVersion:
         assert result is None
 
 
+def _make_html_response(hrefs: list[str]) -> MagicMock:
+    """Builds a mock urlopen response yielding a Simple API HTML page with *hrefs*."""
+    body = "".join(f'<a href="{href}">{href}</a>\n' for href in hrefs)
+    html = f"<!DOCTYPE html><html><body>\n{body}</body></html>".encode("utf-8")
+    mock_response = MagicMock()
+    mock_response.headers.get_content_charset.return_value = "utf-8"
+    mock_response.read.return_value = html
+    mock_response.__enter__.return_value = mock_response
+    return mock_response
+
+
 class TestFetchNexus3Version:
     """Tests for :func:`braincraft.version_check._fetch_nexus3_version`."""
 
     def test_returns_highest_version_on_success(self) -> None:
-        """Returns the highest version reported in the Simple API's versions list."""
-        mock_response = MagicMock()
-        mock_response.__enter__.return_value = MagicMock()
-        with patch("json.load", return_value={"versions": ["1.0.0", "1.5.0", "1.2.0"]}):
-            with patch("urllib.request.urlopen", return_value=mock_response):
-                result = _fetch_nexus3_version(
-                    "braincraft", "https://nexus.example.com/repository/pypi", 5.0
-                )
+        """Returns the highest version parsed from the Simple API HTML page links."""
+        mock_response = _make_html_response(
+            [
+                "braincraft-1.0.0-py3-none-any.whl",
+                "braincraft-1.5.0.tar.gz",
+                "braincraft-1.2.0-py3-none-any.whl",
+            ]
+        )
+        with patch("urllib.request.urlopen", return_value=mock_response):
+            result = _fetch_nexus3_version(
+                "braincraft", "https://nexus.example.com/repository/pypi", 5.0
+            )
         assert result == "1.5.0"
 
     def test_builds_url_and_accept_header(self) -> None:
-        """Request URL and Accept header target the PEP 691 JSON Simple API."""
-        mock_response = MagicMock()
-        mock_response.__enter__.return_value = MagicMock()
-        with patch("json.load", return_value={"versions": ["1.0.0"]}):
-            with patch(
-                "urllib.request.urlopen", return_value=mock_response
-            ) as mock_urlopen:
-                _fetch_nexus3_version(
-                    "braincraft", "https://nexus.example.com/repository/pypi/", 5.0
-                )
+        """Request URL and Accept header target the PEP 691 HTML Simple API."""
+        mock_response = _make_html_response(["braincraft-1.0.0.tar.gz"])
+        with patch(
+            "urllib.request.urlopen", return_value=mock_response
+        ) as mock_urlopen:
+            _fetch_nexus3_version(
+                "braincraft", "https://nexus.example.com/repository/pypi/", 5.0
+            )
         mock_urlopen.assert_called_once()
         request = mock_urlopen.call_args[0][0]
         assert (
             request.full_url
             == "https://nexus.example.com/repository/pypi/simple/braincraft/"
         )
-        assert request.get_header("Accept") == "application/vnd.pypi.simple.v1+json"
+        assert request.get_header("Accept") == "text/html"
 
-    def test_returns_none_on_empty_versions(self) -> None:
-        """An empty versions list is treated as no data available."""
-        mock_response = MagicMock()
-        mock_response.__enter__.return_value = MagicMock()
-        with patch("json.load", return_value={"versions": []}):
-            with patch("urllib.request.urlopen", return_value=mock_response):
-                result = _fetch_nexus3_version(
-                    "braincraft", "https://nexus.example.com/repository/pypi", 5.0
-                )
+    def test_ignores_links_for_other_packages(self) -> None:
+        """Links whose filename does not match the normalized app name are skipped."""
+        mock_response = _make_html_response(
+            ["other-package-9.9.9.tar.gz", "braincraft-1.1.0.tar.gz"]
+        )
+        with patch("urllib.request.urlopen", return_value=mock_response):
+            result = _fetch_nexus3_version(
+                "braincraft", "https://nexus.example.com/repository/pypi", 5.0
+            )
+        assert result == "1.1.0"
+
+    def test_returns_none_on_empty_page(self) -> None:
+        """An HTML page with no matching links is treated as no data available."""
+        mock_response = _make_html_response([])
+        with patch("urllib.request.urlopen", return_value=mock_response):
+            result = _fetch_nexus3_version(
+                "braincraft", "https://nexus.example.com/repository/pypi", 5.0
+            )
         assert result is None
 
     def test_returns_none_on_url_error(self) -> None:
@@ -154,17 +176,6 @@ class TestFetchNexus3Version:
             result = _fetch_nexus3_version(
                 "braincraft", "https://nexus.example.com/repository/pypi", 5.0
             )
-        assert result is None
-
-    def test_returns_none_on_malformed_json(self) -> None:
-        """A malformed response (missing versions key) is caught and reported as None."""
-        mock_response = MagicMock()
-        mock_response.__enter__.return_value = MagicMock()
-        with patch("json.load", return_value={}):
-            with patch("urllib.request.urlopen", return_value=mock_response):
-                result = _fetch_nexus3_version(
-                    "braincraft", "https://nexus.example.com/repository/pypi", 5.0
-                )
         assert result is None
 
 

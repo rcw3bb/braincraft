@@ -2,7 +2,7 @@
 braincraft.version_check - Check a package index for a newer version of an application.
 
 Queries either a PyPI Warehouse-compatible JSON API (``/pypi/<app_name>/json``) or a
-Nexus Repository 3 PEP 691 JSON Simple API (``/simple/<app_name>/``) to determine
+Nexus Repository 3 PEP 691 HTML Simple API (``/simple/<app_name>/``) to determine
 whether a newer version of a given application/package is published. All failures
 (network errors, missing package metadata, malformed responses) are logged and
 treated as "no update information available" rather than raised, so callers can use
@@ -13,9 +13,11 @@ this as a best-effort, non-critical check.
 """
 
 import json
+import re
 import urllib.error
 import urllib.request
 from enum import Enum
+from html.parser import HTMLParser
 from importlib import metadata
 
 from logenrich import setup_logger
@@ -24,7 +26,6 @@ _logger = setup_logger(__name__)
 
 _DEFAULT_INDEX_URL = "https://pypi.org"
 _DEFAULT_TIMEOUT = 5.0
-_NEXUS3_SIMPLE_ACCEPT = "application/vnd.pypi.simple.v1+json"
 
 
 class IndexKind(Enum):
@@ -94,8 +95,54 @@ def _fetch_pypi_version(app_name: str, index_url: str, timeout: float) -> str | 
         return None
 
 
+class _SimpleApiParser(HTMLParser):
+    """Collects ``href`` attributes from anchor tags in a Simple API HTML page.
+
+    :ivar hrefs: ``href`` values collected from every ``<a>`` tag encountered.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.hrefs: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Records the ``href`` attribute of every ``<a>`` tag.
+
+        :param tag: Name of the HTML tag encountered.
+        :param attrs: List of ``(name, value)`` attribute pairs for the tag.
+        """
+        if tag != "a":
+            return
+        for name, value in attrs:
+            if name == "href" and value is not None:
+                self.hrefs.append(value)
+
+
+_FILENAME_EXTENSION_RE = re.compile(
+    r"\.(?:whl|tar\.gz|tar\.bz2|tar\.xz|zip)$", flags=re.IGNORECASE
+)
+_VERSION_PREFIX_RE = re.compile(r"(\d+(?:_\d+)*(?:[a-z]+\d*)?)")
+
+
+def _version_from_href(href: str, normalized_app_name: str) -> str | None:
+    """Extracts a version string from a Simple API link, if it names *normalized_app_name*.
+
+    :param href: Raw ``href`` value of a Simple API package link.
+    :param normalized_app_name: Package name normalized via ``[-_.]+`` -> ``_`` and lowercased.
+    :return: The extracted version string, or ``None`` if the link does not match.
+    """
+    filename = href.split("#", 1)[0].rsplit("/", 1)[-1]
+    filename = _FILENAME_EXTENSION_RE.sub("", filename)
+    normalized_filename = re.sub(r"[-_.]+", "_", filename).lower()
+    if not normalized_filename.startswith(f"{normalized_app_name}_"):
+        return None
+    version_text = normalized_filename[len(normalized_app_name) + 1 :]
+    match = _VERSION_PREFIX_RE.match(version_text)
+    return match.group(1).replace("_", ".") if match else None
+
+
 def _fetch_nexus3_version(app_name: str, index_url: str, timeout: float) -> str | None:
-    """Fetches the latest version from a Nexus 3 PEP 691 JSON Simple API.
+    """Fetches the latest version from a Nexus 3 HTML Simple API.
 
     :param app_name: Package name as published on the index.
     :param index_url: Base URL of the Nexus 3 PyPI-format repository (up to and
@@ -104,11 +151,20 @@ def _fetch_nexus3_version(app_name: str, index_url: str, timeout: float) -> str 
     :return: The latest version string, or ``None`` if it could not be determined.
     """
     url = f"{index_url.rstrip('/')}/simple/{app_name}/"
-    request = urllib.request.Request(url, headers={"Accept": _NEXUS3_SIMPLE_ACCEPT})
+    request = urllib.request.Request(url, headers={"Accept": "text/html"})
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            data = json.load(response)
-        versions: list[str] = data["versions"]
+            charset = response.headers.get_content_charset() or "utf-8"
+            html = response.read().decode(charset, errors="replace")
+
+        parser = _SimpleApiParser()
+        parser.feed(html)
+        normalized_app_name = re.sub(r"[-_.]+", "_", app_name).lower()
+        versions = [
+            version
+            for href in parser.hrefs
+            if (version := _version_from_href(href, normalized_app_name)) is not None
+        ]
         return max(versions, key=_parse_version) if versions else None
     except Exception as exc:  # pylint: disable=broad-exception-caught
         _logger.warning(
